@@ -21,10 +21,10 @@ from streamlit_folium import folium_static
 ######################
 
 # PIL.Image
-image = Image.open('ft-logo.png')
+image = Image.open('airbnblogo.png')
 
 #https://docs.streamlit.io/library/api-reference/media/st.image
-st.image(image, use_column_width=False)
+st.image(image, width=400)
 
 
 
@@ -35,73 +35,76 @@ def get_data():
     return pd.read_csv(url)
 df = get_data()
 
-st.header('AireBnB Data NYC (2019-09-12)')
+
+
+
+
+st.markdown("Welcome to Ricky AirBnB")
+
+boroughs = df['neighbourhood_group'].unique()
+#neighborhoods = df['neighbourhood'].unique()
+neighborhoods = {borough: df[df['neighbourhood_group'] == borough]['neighbourhood'].unique() for borough in boroughs}
+
+st.title("NYC AirBnB Selection")
+
+st.write("Here are the first few rows of the list of AirBnB: ")
+
 st.dataframe(df.head(10))
 
-st.subheader('Selecting a subset of columns')
+# Selecting borough
+selected_borough = st.selectbox("Select a borough:", boroughs)
+selected_neighborhoods = st.multiselect("Select a neighborhoods:", neighborhoods[selected_borough])
 
-st.markdown("Streamlit has a [multiselect widget](https://streamlit.io/docs/api.html#streamlit.multiselect) that allows selecting or removing from a list of items. This lets us build a column selector widget for a dataframe.")
+values = st.slider("Price range", float(df.price.min()), 1000., (50., 300.))
 
-cols = ["name", "host_name", "neighbourhood", "room_type", "price"]
-st_ms = st.multiselect("Columns", df.columns.tolist(), default=cols)
+# Filter the borough
+filtered_data = df[(df['neighbourhood_group'] == selected_borough) &
+                   (df['neighbourhood'].isin(selected_neighborhoods)) &
+                   (df['price'].between(values[0], values[1]))]
 
-st.dataframe(df[st_ms].head(10))
+st.write(f"Displaying data for {selected_borough} borough:")
 
-st.write("---")
+st.write(filtered_data)
 
-st.markdown("""### Sidebar and price range slider
+#st_ms = st.multiselect("Bruh", selected_neighborhood, default=selected_neighborhood[0])
 
-We use `st.slider` to provide a slider that allows selecting a custom range for the histogram. We tuck it away into a [sidebar](https://streamlit.io/docs/api.html#add-widgets-to-sidebar).""")
+total_rentals = len(filtered_data)
 
-values = st.sidebar.slider("Price range", float(df.price.min()), 1000., (50., 300.))
-f = px.histogram(df.query(f"price.between{values}", engine="python"),
-                 x="price", nbins=15, title="Price distribution")
-f.update_xaxes(title="Price")
-f.update_yaxes(title="No. of listings")
-st.plotly_chart(f)
-
-st.write("---")
-
-st.header("Where are the most expensive properties located?")
-st.subheader("On a map")
-st.markdown("The following map shows the top 1% most expensive Airbnbs priced at $800 and above.")
-
-# Get "latitude", "longitude", "price" for top listings
-toplistings = df.query("price>=800")[["name", "latitude", "longitude", "price"]].dropna(how="any").sort_values("price", ascending=False)
-
-Top = toplistings.values[0,:]
-m = folium.Map(location=Top[1:-1], zoom_start=16)
-
-tooltip = "Top listings"
-for j in range(50):
-    name, lat, lon, price = toplistings.values[j,:]
-    folium.Marker(
-            (lat,lon), popup=f"{name}" , tooltip=f"Price:{price}"
-        ).add_to(m)
-
-# call to render Folium map in Streamlit
-folium_static(m)
+st.write(f"Total {total_rentals} housing rentals are found in {selected_neighborhoods}, {selected_borough} with prices between &#36;{(values[0])} and &#36;{(values[1])}.")
 
 
 st.write("---")
 
-st.markdown("""### Images and dropdowns
 
-Use [st.image](https://streamlit.io/docs/api.html#streamlit.image) to show images of cats, puppies, feature importance plots, tagged video frames, and so on.
+toplistings = filtered_data[["name", "neighbourhood", "host_name", "room_type", "latitude", "longitude", "price"]].dropna(how="any").sort_values("price", ascending=False)
 
-Now for a bit of fun.""")
+if not filtered_data.empty:
+    toplistings = filtered_data[["name", "host_name", "neighbourhood", "room_type", "latitude", "longitude", "price"]].dropna(how="any").sort_values("price", ascending=False)
 
-pics = {
-    "Cat": "https://cdn.pixabay.com/photo/2016/09/24/22/20/cat-1692702_960_720.jpg",
-    "Puppy": "https://cdn.pixabay.com/photo/2019/03/15/19/19/puppy-4057786_960_720.jpg",
-    "Sci-fi city": "https://storage.needpix.com/rsynced_images/science-fiction-2971848_1280.jpg",
-    "Cheetah": "img/running-cheetah.jpeg",
-    "FT-Logo": "ft-logo.png"
-}
-pic = st.selectbox("Picture choices", list(pics.keys()), 0)
-st.image(pics[pic], use_column_width=True, caption=pics[pic])
+    # If toplistings is not empty
+    if not toplistings.empty:
+        Top = toplistings.values[0, :]
+        m = folium.Map(location=Top[4:6], zoom_start=16)
 
-st.write("---")
+        tooltip = "Top listings"
+        for j in range(min(50, len(toplistings))):
+            name, host_name, neighborhood, room_type, lat, lon, price = toplistings.values[j, :]
+            popup_text = f"""
+            Name: {name}<br>
+            Neighborhood: {neighborhood}<br>
+            Host name: {host_name}<br>
+            Room type: {room_type}<br>
+            Price: ${price}
+            """
+            folium.Marker(
+                location=(lat, lon), 
+                popup=folium.Popup(popup_text, max_width=300),
+                tooltip=f"Price: ${price}"
+            ).add_to(m)
 
-select_col = st.selectbox("Select Columns", list(df.columns), 0)
-st.write(f"Your selection is {select_col}")
+        folium_static(m)
+    else:
+        st.warning("No listings found within the specified criteria.")
+else:
+    st.warning("No listings found within the specified criteria.")
+
